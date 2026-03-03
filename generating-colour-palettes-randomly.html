@@ -459,16 +459,36 @@
         return best.cand;
       }
 
-      function linkBlueFromText(textRgb) {
-        const textLum = relativeLuminance(textRgb);
-        return textLum < 0.35 ? "#0d57b3" : "#7fc8ff";
+      function hexToRgb(hex) {
+        const clean = hex.replace("#", "");
+        const value = clean.length === 3 ? clean.split("").map((c) => c + c).join("") : clean;
+        return {
+          r: parseInt(value.slice(0, 2), 16),
+          g: parseInt(value.slice(2, 4), 16),
+          b: parseInt(value.slice(4, 6), 16),
+        };
+      }
+
+      function chooseAccessibleLinkColor(background, textColor, minRatio = 4.5) {
+        const bgRgb = oklchToSrgb(background);
+        const candidates = ["#0d57b3", "#7fc8ff"].map((css) => ({ css, rgb: hexToRgb(css) }));
+
+        let bestPassing = null;
+        for (const cand of candidates) {
+          const ratio = colorContrast(cand.rgb, bgRgb);
+          if (ratio >= minRatio && (!bestPassing || ratio > bestPassing.ratio)) {
+            bestPassing = { css: cand.css, ratio };
+          }
+        }
+
+        return bestPassing ? bestPassing.css : textColor;
       }
 
       function applyTheme(roles) {
         const roleCandidates = [roles.text, roles.muted, roles.accent, roles.bg, roles.surface].map(toCandidate);
         const inkSurface = chooseAccessibleColor(roleCandidates, roles.surface, 4.5);
         const inkBg = chooseAccessibleColor(roleCandidates, roles.bg, 4.5);
-        const linkBlue = linkBlueFromText(inkBg.rgb);
+        const linkBlue = chooseAccessibleLinkColor(roles.bg, inkBg.css, 4.5);
 
         const root = document.documentElement;
         root.style.setProperty("--bg", oklchToCss(roles.bg));
