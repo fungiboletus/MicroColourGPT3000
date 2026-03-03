@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>MicroColourGPT 3000</title>
+    <link rel="icon" type="image/svg+xml" href="./favicon.svg?v=a" />
+    <link rel="stylesheet" href="./style.css?v=a" />
+  </head>
+  <body>
+    <noscript>
+      <div class="noscriptNotice" role="alert">Enable JavaScript to use this palette generator.</div>
+    </noscript>
+
+    <main class="app" id="appRoot">
+      <header class="topbar">
+        <h1>MicroColourGPT 3000</h1>
+        <a class="aboutLink" href="./generating-colour-palettes-randomly.html">About</a>
+      </header>
+
+      <section class="controls" aria-label="Palette settings">
+        <div class="panel modePanel">
+          <h2>Mode</h2>
+          <div class="radioGrid" id="modeGroup">
+            <label><input type="radio" name="mode" value="normal" checked /> Normal</label>
+            <label><input type="radio" name="mode" value="vibrant" /> Vibrant</label>
+            <label><input type="radio" name="mode" value="veryVibrant" /> Very Vibrant</label>
+            <label><input type="radio" name="mode" value="pastel" /> Pastel</label>
+            <label><input type="radio" name="mode" value="retro" /> Retro</label>
+            <label><input type="radio" name="mode" value="computer90s" /> Computer 90s</label>
+            <label><input type="radio" name="mode" value="extremeComputer90s" /> Xtreme</label>
+            <label><input type="radio" name="mode" value="grey" /> Grey</label>
+          </div>
+
+          <h2 class="subTitle">Theme Tone</h2>
+          <div class="radioGrid themeGrid" id="themeGroup">
+            <label><input type="radio" name="themePref" value="auto" checked /> Auto</label>
+            <label><input type="radio" name="themePref" value="dark" /> Dark</label>
+            <label><input type="radio" name="themePref" value="light" /> White</label>
+          </div>
+        </div>
+
+        <div class="panel generationPanel">
+          <h2>Generation</h2>
+          <button id="btnTemperature" type="button" class="temperatureBtn" aria-label="Set generation temperature" title="Temperature: Medium">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M14 14.76V3.5a2.5 2.5 0 0 0-5 0v11.26a4.5 4.5 0 1 0 5 0z"></path>
+            </svg>
+          </button>
+          <div class="generationStack">
+            <button id="btnGenerate" type="button" class="primary">Generate Palette</button>
+            <div class="attemptRow">
+              <p id="attemptInfo" class="attemptInfo" role="status" aria-live="polite">Loading model...</p>
+              <button id="statusRefresh" type="button" class="statusRefresh" hidden>Refresh</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel lockPanel">
+          <h2>Fixed Colours</h2>
+          <div class="lockGrid">
+            <p class="hint">Choose up to two colours to guide generation.</p>
+            <div class="lockInput">
+              <label for="lockA">Fixed Colour A</label>
+              <div class="lockRow">
+                <input id="lockA" type="text" placeholder="e.g. #ff6b00 or pink" />
+                <button class="preview" id="previewA" type="button" aria-label="Pick fixed colour A">Pick</button>
+              </div>
+              <small id="validA"></small>
+            </div>
+            <div class="lockInput">
+              <label for="lockB">Fixed Colour B</label>
+              <div class="lockRow">
+                <input id="lockB" type="text" placeholder="e.g. #2088ff or oklch(40% 0.1243 42.51)" />
+                <button class="preview" id="previewB" type="button" aria-label="Pick fixed colour B">Pick</button>
+              </div>
+              <small id="validB"></small>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="palette" id="palette" aria-label="Generated palette"></section>
+    </main>
+
+    <dialog id="materialPicker" class="pickerDialog" aria-label="Pick a fixed colour">
+      <form method="dialog" class="pickerShell">
+        <div id="pickerGrid" class="pickerGrid" role="list" aria-label="Colour grid"></div>
+        <div class="pickerActions">
+          <div class="pickerSources" role="group" aria-label="Picker source">
+            <button id="pickerSourceMd" type="button" class="pickerSourceBtn" aria-pressed="true">MD</button>
+            <button id="pickerSourceTw" type="button" class="pickerSourceBtn" aria-pressed="false">TW</button>
+          </div>
+          <button id="pickerClear" type="button" class="pickerClear">Clear</button>
+          <button id="pickerClose" type="button" class="pickerClose" aria-label="Close colour picker">Close</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="temperatureDialog" class="pickerDialog temperatureDialog" aria-label="Set generation temperature">
+      <form method="dialog" class="pickerShell temperatureShell">
+        <div class="temperatureBody">
+          <h3>Temperature</h3>
+          <p class="temperatureHint">Lower is boring, higher is not bold.</p>
+          <div class="temperatureOptions" id="temperatureOptions" role="radiogroup" aria-label="Temperature profile">
+            <label><input type="radio" name="temperatureProfile" value="low" /> Low</label>
+            <label><input type="radio" name="temperatureProfile" value="medium" /> Medium</label>
+            <label><input type="radio" name="temperatureProfile" value="high" /> High</label>
+          </div>
+        </div>
+        <div class="pickerActions">
+          <button id="temperatureClose" type="button" class="pickerClose" aria-label="Close temperature settings">Close</button>
+        </div>
+      </form>
+    </dialog>
+
+    <script src="./pickerColorData.js?v=a"></script>
+    <script src="./app.js?v=a"></script>
+  </body>
+</html>
