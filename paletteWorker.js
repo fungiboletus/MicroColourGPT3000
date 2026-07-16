@@ -27,6 +27,25 @@ const TEMPERATURE_PRESETS = {
 
 const RETRO_HUES = [20, 38, 52, 92, 180, 215, 330].map((d) => d / 360);
 const WEBSAFE_STEPS = [0, 51, 102, 153, 204, 255];
+const TAILWIND_500_COLORS = [
+  [239, 68, 68],
+  [249, 115, 22],
+  [245, 158, 11],
+  [234, 179, 8],
+  [132, 204, 22],
+  [34, 197, 94],
+  [16, 185, 129],
+  [20, 184, 166],
+  [6, 182, 212],
+  [14, 165, 233],
+  [59, 130, 246],
+  [99, 102, 241],
+  [139, 92, 246],
+  [168, 85, 247],
+  [217, 70, 239],
+  [236, 72, 153],
+  [244, 63, 94],
+];
 
 const MODE_RULES = {
   normal: { maxAttempts: 3000, minVibrant: 0 },
@@ -37,6 +56,8 @@ const MODE_RULES = {
   computer90s: { maxAttempts: 3000, minVibrant: 0, computer90s: true },
   extremeComputer90s: { maxAttempts: 3000, minVibrant: 0, extremeComputer90s: true },
   grey: { maxAttempts: 3000, minVibrant: 0, grey: true },
+  watch: { maxAttempts: 10000, minVibrant: 0, watch: true },
+  corporate: { maxAttempts: 10000, minVibrant: 1, corporate: true },
 };
 
 let runtime = null;
@@ -742,6 +763,17 @@ function remapPastelRolesForDarkMode(palette, fallbackRoles) {
 }
 
 function randomColorForMode(mode, cMax) {
+  if (mode === "watch") {
+    const l = 0.72 + Math.random() * 0.18;
+    const c = 0.08 + Math.random() * Math.max(0, Math.min(0.15, cMax) - 0.08);
+    return [l, c, Math.random()];
+  }
+
+  if (mode === "corporate") {
+    const [r, g, b] = TAILWIND_500_COLORS[Math.floor(Math.random() * TAILWIND_500_COLORS.length)];
+    return rgbBytesToOklch(r, g, b, cMax);
+  }
+
   if (mode === "grey") {
     const l = 0.34 + Math.random() * 0.5;
     const c = Math.random() * 0.018;
@@ -891,6 +923,54 @@ function isGreyPalette(palette, cMax) {
   return nearNeutralCount >= 3;
 }
 
+function isCorporatePalette(palette, cMax) {
+  const chromaMax = Math.min(0.18, 0.85 * cMax);
+  let restrainedCount = 0;
+
+  for (let i = 0; i < palette.length; i += 1) {
+    if (palette[i][1] <= chromaMax) restrainedCount += 1;
+  }
+
+  return restrainedCount >= 3;
+}
+
+function chooseWatchRoles(palette) {
+  const black = [0, 0, 0];
+  const ranked = [0, 1, 2, 3]
+    .map((idx) => ({ idx, contrast: contrastRatio(palette[idx], black) }))
+    .sort((a, b) => b.contrast - a.contrast);
+  const textIdx = ranked[0].idx;
+  const remaining = ranked.slice(1).map((entry) => entry.idx);
+  let accentIdx = remaining[0];
+  for (let i = 1; i < remaining.length; i += 1) {
+    if (palette[remaining[i]][1] > palette[accentIdx][1]) accentIdx = remaining[i];
+  }
+  const nonAccent = remaining.filter((idx) => idx !== accentIdx);
+  const surfaceIdx = nonAccent[0];
+  const mutedIdx = nonAccent[1];
+  const text = palette[textIdx];
+  const surface = palette[surfaceIdx];
+  const accent = palette[accentIdx];
+  const muted = palette[mutedIdx];
+
+  return {
+    bg: black,
+    surface,
+    text,
+    accent,
+    muted,
+    contrast: contrastRatio(text, black),
+    textSurfaceContrast: contrastRatio(text, surface),
+    accentContrast: contrastRatio(accent, black),
+    mutedContrast: contrastRatio(muted, black),
+    bgIdx: -1,
+    surfaceIdx,
+    textIdx,
+    accentIdx,
+    profile: "watch-oled",
+  };
+}
+
 function srgbByteToLinear(v) {
   const x = v / 255;
   return x <= 0.04045 ? x / 12.92 : Math.pow((x + 0.055) / 1.055, 2.4);
@@ -991,15 +1071,19 @@ function generatePaletteInWorker(rt, options, requestId) {
     const palette = decoded.slice(0, 4);
     if (forcedA) palette[0] = forcedA;
     if (second) palette[1] = second;
+    if (rules.watch && !forcedA) palette[0] = first;
 
     const vibrantCount = countVibrantColors(palette, cfg.C_MAX);
     if (vibrantCount < rules.minVibrant) continue;
     if (rules.pastel && !isPastelPalette(palette, cfg.C_MAX)) continue;
     if (rules.retro && !isRetroPalette(palette)) continue;
     if (rules.grey && !isGreyPalette(palette, cfg.C_MAX)) continue;
+    if (rules.corporate && !isCorporatePalette(palette, cfg.C_MAX)) continue;
 
     let roles;
-    if (rules.pastel) {
+    if (rules.watch) {
+      roles = chooseWatchRoles(palette);
+    } else if (rules.pastel) {
       // Pastel generation should not be blocked by dark-mode constraints.
       const basePastelRoles = chooseRolesByPreference(palette, cfg.C_MAX, null);
       if (!basePastelRoles) continue;

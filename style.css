@@ -412,6 +412,17 @@ body {
   text-align: left;
 }
 
+.fieldLabel {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.anchorGrid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
 .lockRow {
   display: flex;
   gap: 8px;
@@ -998,6 +1009,11 @@ body {
   .lockInput label {
     font-size: 0.74rem;
     margin-bottom: 4px;
+  }
+
+  .fieldLabel {
+    margin-bottom: 4px;
+    font-size: 0.74rem;
   }
 
   .lockRow {

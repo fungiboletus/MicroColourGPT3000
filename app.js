@@ -2,6 +2,7 @@ const C_MAX = 0.21791855751774927;
 const SESSION_KEYS = {
   mode: "palette_mode",
   themePref: "palette_theme_pref",
+  neutralAnchor: "palette_neutral_anchor",
   temperatureProfile: "palette_temperature_profile",
   lockA: "palette_lock_a",
   lockB: "palette_lock_b",
@@ -18,6 +19,10 @@ const worker = new Worker("./paletteWorker.js?v=a");
 let workerReady = false;
 let activeRequestId = 0;
 let latestRoles = null;
+let latestRawPalette = null;
+let latestProtectedCount = 0;
+let requestedProtectedCount = 0;
+let latestResultMeta = null;
 const DEFAULT_GENERATE_LABEL = "Generate Palette";
 
 const attemptsEl = document.getElementById("attemptInfo");
@@ -80,10 +85,16 @@ function selectedThemePref() {
   return checked ? checked.value : "auto";
 }
 
+function selectedNeutralAnchor() {
+  const checked = document.querySelector('input[name="neutralAnchor"]:checked');
+  return checked ? checked.value : "auto";
+}
+
 function saveSessionState() {
   try {
     sessionStorage.setItem(SESSION_KEYS.mode, selectedMode());
     sessionStorage.setItem(SESSION_KEYS.themePref, selectedThemePref());
+    sessionStorage.setItem(SESSION_KEYS.neutralAnchor, selectedNeutralAnchor());
     sessionStorage.setItem(SESSION_KEYS.temperatureProfile, selectedTemperatureProfile);
     sessionStorage.setItem(SESSION_KEYS.lockA, lockAInput.value.trim());
     sessionStorage.setItem(SESSION_KEYS.lockB, lockBInput.value.trim());
@@ -97,6 +108,7 @@ function restoreSessionState() {
   try {
     const savedMode = sessionStorage.getItem(SESSION_KEYS.mode);
     const savedThemePref = sessionStorage.getItem(SESSION_KEYS.themePref);
+    const savedNeutralAnchor = sessionStorage.getItem(SESSION_KEYS.neutralAnchor);
     const savedTemperatureProfile = sessionStorage.getItem(SESSION_KEYS.temperatureProfile);
     const savedLockA = sessionStorage.getItem(SESSION_KEYS.lockA);
     const savedLockB = sessionStorage.getItem(SESSION_KEYS.lockB);
@@ -110,6 +122,11 @@ function restoreSessionState() {
     if (savedThemePref) {
       const themeInput = document.querySelector(`input[name="themePref"][value="${savedThemePref}"]`);
       if (themeInput) themeInput.checked = true;
+    }
+
+    if (savedNeutralAnchor) {
+      const anchorInput = document.querySelector(`input[name="neutralAnchor"][value="${savedNeutralAnchor}"]`);
+      if (anchorInput) anchorInput.checked = true;
     }
 
     if (savedTemperatureProfile && TEMPERATURE_PROFILES[savedTemperatureProfile]) {
@@ -676,6 +693,93 @@ function refreshLockedColorValidation() {
   return { colorA, colorB };
 }
 
+function rolesForPalette(palette, sourceRoles) {
+  const bg = palette[sourceRoles.bgIdx];
+  const surface = palette[sourceRoles.surfaceIdx];
+  const text = palette[sourceRoles.textIdx];
+  const accent = palette[sourceRoles.accentIdx];
+  return {
+    ...sourceRoles,
+    bg,
+    surface,
+    text,
+    accent,
+    muted: [0.65 * text[0] + 0.35 * bg[0], Math.max(0.015, text[1] * 0.35), text[2]],
+    contrast: colorContrast(oklchToSrgb(text), oklchToSrgb(bg)),
+  };
+}
+
+function paletteWithNeutral(rawPalette, neutral, protectedCount) {
+  const palette = rawPalette.map((color) => color.slice());
+  const replacingWithWhite = neutral === "white";
+  let bestIdx = protectedCount;
+  let bestScore = Infinity;
+
+  for (let i = protectedCount; i < palette.length; i += 1) {
+    const color = palette[i];
+    const targetDistance = replacingWithWhite ? 1 - color[0] : color[0];
+    const score = targetDistance * 2 + color[1] * 4;
+    if (score < bestScore) {
+      bestIdx = i;
+      bestScore = score;
+    }
+  }
+
+  palette[bestIdx] = replacingWithWhite ? [1, 0, 0] : [0, 0, 0];
+  return { palette, neutral, neutralIdx: bestIdx };
+}
+
+function rolesWithNeutralBackground(palette, neutralIdx, sourceRoles) {
+  const remaining = palette.map((_, idx) => idx).filter((idx) => idx !== neutralIdx);
+  const textIdx = remaining.reduce((bestIdx, idx) => {
+    const bestContrast = colorContrast(oklchToSrgb(palette[bestIdx]), oklchToSrgb(palette[neutralIdx]));
+    const contrast = colorContrast(oklchToSrgb(palette[idx]), oklchToSrgb(palette[neutralIdx]));
+    return contrast > bestContrast ? idx : bestIdx;
+  }, remaining[0]);
+  const others = remaining.filter((idx) => idx !== textIdx);
+  const accentIdx = palette[others[0]][1] >= palette[others[1]][1] ? others[0] : others[1];
+  const surfaceIdx = others.find((idx) => idx !== accentIdx);
+
+  return rolesForPalette(palette, {
+    ...sourceRoles,
+    bgIdx: neutralIdx,
+    textIdx,
+    accentIdx,
+    surfaceIdx,
+  });
+}
+
+function transformCurrentPalette() {
+  if (!latestRawPalette || !latestResultMeta) return;
+
+  const neutralPref = selectedNeutralAnchor();
+  let candidates;
+  if (neutralPref === "off") candidates = [{ palette: latestRawPalette.map((color) => color.slice()), neutral: null, neutralIdx: null }];
+  else if (neutralPref === "auto") {
+    const themePref = selectedThemePref();
+    const neutrals = themePref === "dark" ? ["black"] : themePref === "light" ? ["white"] : ["black", "white"];
+    candidates = neutrals.map((neutral) => paletteWithNeutral(latestRawPalette, neutral, latestProtectedCount));
+  } else {
+    candidates = [paletteWithNeutral(latestRawPalette, neutralPref, latestProtectedCount)];
+  }
+
+  let best = null;
+  const themePref = selectedThemePref();
+  for (const candidate of candidates) {
+    const neutralMatchesTheme = themePref === "auto"
+      || (themePref === "dark" && candidate.neutral === "black")
+      || (themePref === "light" && candidate.neutral === "white");
+    const roles = candidate.neutralIdx !== null && neutralMatchesTheme
+      ? rolesWithNeutralBackground(candidate.palette, candidate.neutralIdx, latestResultMeta.roles)
+      : rolesForPalette(candidate.palette, latestResultMeta.roles);
+    if (!best || roles.contrast > best.roles.contrast) best = { palette: candidate.palette, roles };
+  }
+
+  latestRoles = best.roles;
+  applyTheme(best.roles);
+  renderPalette(best.palette);
+}
+
 function generate() {
   if (!workerReady) return;
 
@@ -687,21 +791,19 @@ function generate() {
 
   activeRequestId += 1;
   const requestId = activeRequestId;
+  requestedProtectedCount = colorB ? 2 : colorA ? 1 : 0;
 
   attemptsEl.textContent = "Scanning palette space...";
   setStatus("Scanning palette space...", true);
+
+  const themePref = selectedThemePref();
 
   worker.postMessage({
     type: "generate",
     requestId,
     options: {
       mode: selectedMode(),
-      darkMode: (() => {
-        const pref = selectedThemePref();
-        if (pref === "dark") return true;
-        if (pref === "light") return false;
-        return null;
-      })(),
+      darkMode: themePref === "dark" ? true : themePref === "light" ? false : null,
       forcedA: colorA || null,
       forcedB: colorB || null,
       temperatureProfile: selectedTemperatureProfile,
@@ -735,9 +837,11 @@ worker.onmessage = (event) => {
     }
 
     latestRoles = result.roles;
+    latestRawPalette = result.palette.map((color) => color.slice());
+    latestProtectedCount = requestedProtectedCount;
+    latestResultMeta = result;
 
-    applyTheme(result.roles);
-    renderPalette(result.palette);
+    transformCurrentPalette();
     setStatus(`${result.attempts} attempts - ${result.vibrantCount} vibrant tones`, false);
     return;
   }
@@ -866,7 +970,12 @@ document.getElementById("modeGroup").addEventListener("change", () => {
 
 document.getElementById("themeGroup").addEventListener("change", () => {
   saveSessionState();
-  if (latestRoles) generate();
+  if (latestRawPalette) transformCurrentPalette();
+});
+
+document.getElementById("neutralAnchorGroup").addEventListener("change", () => {
+  saveSessionState();
+  if (latestRawPalette) transformCurrentPalette();
 });
 
 restoreSessionState();
